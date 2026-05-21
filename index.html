@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AEG — Agent Economy Gaming. Learn DeFi. Risk Nothing. A trading simulation game that teaches real crypto mechanics without real money.">
+  <meta name="theme-color" content="#0a0a0f">
+  <title>AEG — Agent Economy Gaming</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Welcome / Tutorial Overlay -->
+  <div id="welcomeOverlay" class="overlay hidden">
+    <div class="overlay-card">
+      <div class="overlay-logo">AEG</div>
+      <h2>Welcome to Agent Economy Gaming</h2>
+      <p class="overlay-sub">Learn DeFi. Risk Nothing.</p>
+      <div class="tutorial-steps">
+        <div class="tutorial-step">
+          <span class="step-icon">📈</span>
+          <div>
+            <strong>Trade Smart</strong>
+            <p>Buy and sell a simulated token. Watch the chart, time your entries, and grow your capital.</p>
+          </div>
+        </div>
+        <div class="tutorial-step">
+          <span class="step-icon">🤖</span>
+          <div>
+            <strong>Listen to the Bot</strong>
+            <p>Your Bot Advisor watches the market and gives tips. Follow its advice for steady progress.</p>
+          </div>
+        </div>
+        <div class="tutorial-step">
+          <span class="step-icon">⚡</span>
+          <div>
+            <strong>Unlock Leverage</strong>
+            <p>Build reputation through good trades. Higher rep = higher leverage tiers (2x → 5x → 10x → 20x).</p>
+          </div>
+        </div>
+        <div class="tutorial-step">
+          <span class="step-icon">💰</span>
+          <div>
+            <strong>Pay Your Gas</strong>
+            <p>Bad trades leave gas debt. Unpaid fees bleed your reputation. Stay out of the red.</p>
+          </div>
+        </div>
+      </div>
+      <button id="startBtn" class="btn-primary overlay-btn">Start Trading</button>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="logo">AEG</h1>
+        <span class="tagline">Learn DeFi. Risk Nothing.</span>
+      </div>
+      <div class="header-right">
+        <span id="headerCapital" class="header-stat">$10,000.00</span>
+        <span id="headerPnl" class="header-stat pnl neutral">+ $0.00</span>
+      </div>
+    </header>
+
+    <!-- Main Layout -->
+    <main class="main-grid">
+      <!-- Left Panel: Chart + Trade Controls -->
+      <section class="left-panel">
+        <div class="chart-container">
+          <div class="chart-header">
+            <span class="chart-title">TOKEN / USDC</span>
+            <span id="currentPrice" class="chart-price">$100.00</span>
+            <span id="priceChange" class="chart-change neutral">+0.00%</span>
+          </div>
+          <canvas id="priceChart"></canvas>
+        </div>
+
+        <!-- Trade Controls -->
+        <div class="trade-controls">
+          <div class="trade-toggle">
+            <button id="buyBtn" class="toggle-btn active buy">Buy</button>
+            <button id="sellBtn" class="toggle-btn sell">Sell</button>
+          </div>
+          <div class="trade-input-group">
+            <label for="tradeAmount">Amount (USDC)</label>
+            <input type="number" id="tradeAmount" min="1" step="1" value="100" placeholder="Enter amount...">
+          </div>
+          <div class="trade-preview">
+            <span>You will receive:</span>
+            <span id="quantityDisplay" class="mono">0.0000 tokens</span>
+          </div>
+          <button id="executeTrade" class="btn-primary btn-buy">Execute Buy</button>
+        </div>
+      </section>
+
+      <!-- Right Panel -->
+      <section class="right-panel">
+        <!-- Portfolio Summary -->
+        <div class="card" id="portfolioCard">
+          <h3 class="card-title">Portfolio</h3>
+          <div class="portfolio-stats">
+            <div class="stat-row">
+              <span class="stat-label">Capital</span>
+              <span id="capital" class="stat-value mono">$10,000.00</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Total P&L</span>
+              <span id="totalPnl" class="stat-value mono pnl neutral">$0.00</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Unrealized P&L</span>
+              <span id="unrealizedPnl" class="stat-value mono pnl neutral">$0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Open Positions -->
+        <div class="card" id="positionsCard">
+          <h3 class="card-title">Open Positions</h3>
+          <div class="table-wrapper">
+            <table id="positionsTable">
+              <thead>
+                <tr>
+                  <th>Entry</th>
+                  <th>Qty</th>
+                  <th>P&L</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="positionsBody">
+                <tr class="empty-row"><td colspan="4">No open positions</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Rep & Leverage -->
+        <div class="card" id="repCard">
+          <h3 class="card-title">Reputation & Leverage</h3>
+          <div class="rep-display">
+            <div class="rep-score-row">
+              <span class="rep-score mono" id="repScore">50</span>
+              <span class="tier-badge tier-1" id="tierBadge">T1</span>
+              <span class="tier-label" id="tierLabel">1x Spot</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="repProgress" style="width: 50%"></div>
+            </div>
+            <span class="progress-label" id="repProgressLabel">50 / 100 to next tier</span>
+          </div>
+        </div>
+
+        <!-- Gas Debt -->
+        <div class="card" id="debtCard">
+          <h3 class="card-title">Gas Debt</h3>
+          <div class="debt-display">
+            <div class="stat-row">
+              <span class="stat-label">Total Owed</span>
+              <span id="debtTotal" class="stat-value mono debt-safe">$0.00</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Unpaid Days</span>
+              <span id="debtDays" class="stat-value mono">0</span>
+            </div>
+          </div>
+          <button id="payDebt" class="btn-secondary" disabled>Pay Debt</button>
+        </div>
+
+        <!-- Trade History -->
+        <div class="card" id="historyCard">
+          <h3 class="card-title">Trade History</h3>
+          <div class="scroll-list" id="tradeHistory">
+            <p class="empty-message">No trades yet</p>
+          </div>
+        </div>
+
+        <!-- Bot Advisor -->
+        <div class="card bot-card" id="botCard">
+          <h3 class="card-title">🤖 Bot Advisor</h3>
+          <div class="chat-area" id="chatArea">
+            <!-- Messages injected here -->
+          </div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="Ask the bot a question..." disabled>
+            <button id="chatSend" class="btn-icon" disabled>▸</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/app.js"></script>
+</body>
+</html>

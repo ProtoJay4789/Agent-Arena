@@ -1,0 +1,7 @@
+{
+  "name": "aeg",
+  "version": "0.1.0",
+  "description": "Agent Economy Gaming — DeFi Trading Simulation",
+  "type": "module",
+  "private": true
+}
