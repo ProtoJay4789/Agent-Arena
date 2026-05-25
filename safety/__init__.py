@@ -14,6 +14,7 @@ Pattern: Agent proposes → Risk check → Human confirms → Execute
 from .transfer_gate import TransferGate, TransferRequest, RiskLevel
 from .input_firewall import InputFirewall, InputSource, ThreatLevel
 from .circuit_breaker import CircuitBreaker, CircuitState
+from .trust_registry import TrustRegistry, AgentIdentity, ProtocolEntry, TrustLevel, ProtocolStatus
 
 
 class SafetyLayer:
@@ -33,6 +34,9 @@ class SafetyLayer:
         verdict = safety.validate_input(text, source=InputSource.NFT_METADATA)
         if verdict.blocked:
             return  # Don't process
+        
+        # Trust check — who is this agent?
+        trust = safety.trust_check(sender="0xABC", protocol="solana:jupiter")
     """
     
     def __init__(
@@ -44,6 +48,7 @@ class SafetyLayer:
         self.transfer_gate = TransferGate(allowlist=allowlist, daily_limit_usd=daily_limit_usd)
         self.input_firewall = InputFirewall()
         self.circuit_breaker = CircuitBreaker(max_transfers_per_hour=max_transfers_per_hour)
+        self.trust_registry = TrustRegistry()
     
     def check_transfer(self, to: str, amount: float, token: str, reason: str = "") -> dict:
         """Full safety check for a transfer. Returns approval status."""
@@ -101,6 +106,27 @@ class SafetyLayer:
             "reason": verdict.reason,
         }
     
+    def trust_check(self, sender: str, protocol: str, contract: str = "") -> dict:
+        """Full trust check — is the sender trusted and protocol safe?"""
+        return self.trust_registry.trust_check(sender, protocol, contract)
+    
+    def register_agent(self, address: str, name: str, tags: list[str] | None = None) -> None:
+        """Register a known agent."""
+        self.trust_registry.register_agent(AgentIdentity(
+            address=address,
+            name=name,
+            tags=tags or [],
+        ))
+    
+    def register_protocol(self, chain: str, name: str, contracts: list[str] | None = None) -> None:
+        """Register a known safe protocol."""
+        self.trust_registry.register_protocol(ProtocolEntry(
+            name=name,
+            chain=chain,
+            status=ProtocolStatus.VERIFIED,
+            contracts=contracts or [],
+        ))
+    
     def emergency_stop(self) -> dict:
         """Emergency stop — blocks all transfers."""
         return self.circuit_breaker.emergency_stop()
@@ -124,4 +150,9 @@ __all__ = [
     "ThreatLevel",
     "CircuitBreaker",
     "CircuitState",
+    "TrustRegistry",
+    "AgentIdentity",
+    "ProtocolEntry",
+    "TrustLevel",
+    "ProtocolStatus",
 ]

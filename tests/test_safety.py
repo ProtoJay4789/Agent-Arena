@@ -209,6 +209,166 @@ def test_safety_layer_emergency():
     assert result["blocked"] is True
 
 
+# ── TrustRegistry Tests ──────────────────────────────────────────────────
+
+def test_agent_registration():
+    """Register and look up an agent."""
+    from safety.trust_registry import TrustRegistry, AgentIdentity, TrustLevel
+    reg = TrustRegistry()
+    reg.register_agent(AgentIdentity(address="0xABC", name="Bot Alpha"))
+    agent = reg.get_agent("0xABC")
+    assert agent is not None
+    assert agent.name == "Bot Alpha"
+    assert agent.trust_level == TrustLevel.UNTRUSTED
+
+
+def test_agent_verification():
+    """Verify an agent and check trust level."""
+    from safety.trust_registry import TrustRegistry, AgentIdentity, TrustLevel
+    reg = TrustRegistry()
+    reg.register_agent(AgentIdentity(address="0xABC", name="Bot Alpha"))
+    reg.verify_agent("0xABC", "admin")
+    agent = reg.get_agent("0xABC")
+    assert agent.trust_level == TrustLevel.VERIFIED
+
+
+def test_vouching_upgrades_trust():
+    """Multiple vouches should upgrade trust level."""
+    from safety.trust_registry import TrustRegistry, AgentIdentity, TrustLevel
+    reg = TrustRegistry()
+    reg.register_agent(AgentIdentity(address="0xNEW", name="New Bot"))
+    
+    # 3 vouches = TRUSTED
+    for i in range(3):
+        reg.register_agent(AgentIdentity(address=f"0xV{i}", name=f"Voucher {i}"))
+        reg.vouch_for(f"0xV{i}", "0xNEW")
+    
+    agent = reg.get_agent("0xNEW")
+    assert agent.trust_level == TrustLevel.TRUSTED
+
+
+def test_interaction_reputation():
+    """Successful interactions should boost reputation."""
+    from safety.trust_registry import TrustRegistry, AgentIdentity
+    reg = TrustRegistry()
+    reg.register_agent(AgentIdentity(address="0xABC", name="Bot"))
+    
+    for _ in range(5):
+        reg.record_interaction("0xABC", success=True)
+    
+    agent = reg.get_agent("0xABC")
+    assert agent.reputation_score > 0
+    assert agent.successful_interactions == 5
+
+
+def test_failed_interactions_demote():
+    """Failed interactions should reduce trust."""
+    from safety.trust_registry import TrustRegistry, AgentIdentity, TrustLevel
+    reg = TrustRegistry()
+    reg.register_agent(AgentIdentity(address="0xABC", name="Bot"))
+    reg.verify_agent("0xABC", "admin")
+    
+    for _ in range(3):
+        reg.record_interaction("0xABC", success=False)
+    
+    agent = reg.get_agent("0xABC")
+    assert agent.trust_level == TrustLevel.OBSERVED
+
+
+def test_protocol_registration():
+    """Register and check a protocol."""
+    from safety.trust_registry import TrustRegistry, ProtocolEntry, ProtocolStatus
+    reg = TrustRegistry()
+    reg.register_protocol(ProtocolEntry(
+        name="Jupiter",
+        chain="solana",
+        status=ProtocolStatus.VERIFIED,
+        contracts=["JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"],
+    ))
+    
+    decision = reg.is_protocol_safe("solana", "Jupiter")
+    assert decision.allowed is True
+
+
+def test_banned_protocol_blocked():
+    """Banned protocols should be blocked."""
+    from safety.trust_registry import TrustRegistry, ProtocolEntry, ProtocolStatus
+    reg = TrustRegistry()
+    reg.register_protocol(ProtocolEntry(
+        name="ScamSwap",
+        chain="base",
+        status=ProtocolStatus.BANNED,
+        notes="Rug pull confirmed",
+    ))
+    
+    decision = reg.is_protocol_safe("base", "ScamSwap")
+    assert decision.allowed is False
+
+
+def test_unknown_protocol_requires_approval():
+    """Unknown protocols should require human approval."""
+    from safety.trust_registry import TrustRegistry
+    reg = TrustRegistry()
+    
+    decision = reg.is_protocol_safe("base", "UnknownDex")
+    assert decision.allowed is False
+    assert decision.requires_approval is True
+
+
+def test_contract_verification():
+    """Verified contracts should pass trust check."""
+    from safety.trust_registry import TrustRegistry, ProtocolEntry, ProtocolStatus
+    reg = TrustRegistry()
+    reg.register_protocol(ProtocolEntry(
+        name="Jupiter",
+        chain="solana",
+        status=ProtocolStatus.VERIFIED,
+        contracts=["JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"],
+    ))
+    
+    decision = reg.check_contract("solana", "Jupiter", "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4")
+    assert decision.allowed is True
+
+
+def test_trust_check_composite():
+    """Full trust check with sender + protocol."""
+    from safety.trust_registry import TrustRegistry, AgentIdentity, ProtocolEntry, ProtocolStatus
+    reg = TrustRegistry()
+    
+    # Register known agent
+    reg.register_agent(AgentIdentity(address="0xABC", name="Bot"))
+    reg.verify_agent("0xABC", "admin")
+    
+    # Register known protocol
+    reg.register_protocol(ProtocolEntry(
+        name="Jupiter",
+        chain="solana",
+        status=ProtocolStatus.VERIFIED,
+    ))
+    
+    result = reg.trust_check("0xABC", "solana:Jupiter")
+    assert result["decision"] == "proceed"
+
+
+def test_trust_check_unknown_sender_unknown_protocol():
+    """Unknown sender + unknown protocol = block."""
+    from safety.trust_registry import TrustRegistry
+    reg = TrustRegistry()
+    
+    result = reg.trust_check("0xHACKER", "base:ScamDex")
+    assert result["decision"] == "block"
+
+
+def test_safety_layer_trust_check():
+    """SafetyLayer integrates trust registry."""
+    safety = SafetyLayer()
+    safety.register_agent("0xABC", "Known Bot")
+    safety.register_protocol("solana", "Jupiter")
+    
+    result = safety.trust_check("0xABC", "solana:Jupiter")
+    assert "decision" in result
+
+
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     passed = 0
