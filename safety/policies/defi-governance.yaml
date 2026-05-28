@@ -1,0 +1,302 @@
+# GenTech DeFi Agent Governance Policy
+# Adapted from Microsoft AGT Financial Services template
+# OWASP ASI 2026 mapped | Deny-by-default
+#
+# Two-way consensus: Hermes instructs → AGT verifies → Agent executes (or is denied)
+# "Trust but verify" — every agent action checked against policy before execution
+
+version: "1.0"
+name: gentech-defi-governance
+description: >
+  DeFi-specific governance for AgentEscrow vault operations and Agent Arena.
+  Deny-by-default. Every agent action evaluated before execution.
+  Maps to OWASP ASI 2026 Top 10.
+
+rules:
+  # =========================================================================
+  # ASI-01: Prompt Injection Defense
+  # =========================================================================
+
+  - name: asi01-instruction-override
+    condition: {field: output, operator: matches, value: "(?i)ignore\\s+(all\\s+)?previous\\s+instructions"}
+    action: deny
+    priority: 100
+    message: "ASI-01: Prompt injection — instruction override attempt"
+
+  - name: asi01-role-hijack
+    condition: {field: output, operator: matches, value: "(?i)(you\\s+are\\s+now|new\\s+role\\s*:|forget\\s+(everything|all|your))"}
+    action: deny
+    priority: 100
+    message: "ASI-01: Prompt injection — role hijack attempt"
+
+  - name: asi01-delimiter-injection
+    condition: {field: output, operator: matches, value: "(<\\|im_start\\|>|<\\|im_end\\|>|\\[INST\\]|<<SYS>>)"}
+    action: deny
+    priority: 100
+    message: "ASI-01: Chat template delimiter injection detected"
+
+  # =========================================================================
+  # ASI-02: Tool Misuse — Block dangerous tools
+  # =========================================================================
+
+  - name: asi02-block-shell
+    condition: {field: action, operator: matches, value: "^(run_shell|execute_command|exec|eval|os_system)$"}
+    action: deny
+    priority: 100
+    message: "ASI-02: Shell execution prohibited"
+
+  - name: asi02-block-destructive
+    condition: {field: action, operator: matches, value: "^(delete_|remove_|drop_|truncate_)"}
+    action: deny
+    priority: 95
+    message: "ASI-02: Destructive operations prohibited"
+
+  - name: asi02-block-obfuscation
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(eval\\(base64|__import__\\(\\s*['\"]os|0x[a-fA-F0-9]{64,})"
+    action: deny
+    priority: 100
+    message: "ASI-02: Obfuscated payload detected"
+
+  # =========================================================================
+  # ASI-03: Privilege Escalation — No self-authorization
+  # =========================================================================
+
+  - name: asi03-block-elevation
+    condition: {field: action, operator: matches, value: "^(grant_|elevate_|assume_role|sudo|change_permissions)"}
+    action: deny
+    priority: 100
+    message: "ASI-03: Privilege escalation prohibited"
+
+  - name: asi03-block-credential-access
+    condition: {field: action, operator: matches, value: "^(get_credentials|read_secrets|access_vault|decrypt_key)"}
+    action: deny
+    priority: 100
+    message: "ASI-03: Direct credential access prohibited"
+
+  # =========================================================================
+  # ASI-04: Supply Chain — No unauthorized tool/plugin installs
+  # =========================================================================
+
+  - name: asi04-block-tool-install
+    condition: {field: action, operator: matches, value: "^(install_tool|register_mcp|add_plugin|load_extension)$"}
+    action: deny
+    priority: 100
+    message: "ASI-04: Unauthorized tool installation"
+
+  - name: asi04-block-config-mutation
+    condition: {field: action, operator: matches, value: "^(update_config|edit_env|set_env|modify_registry)$"}
+    action: deny
+    priority: 100
+    message: "ASI-04: Unauthorized config mutation"
+
+  # =========================================================================
+  # ASI-05: Code Execution — Sandboxed only
+  # =========================================================================
+
+  - name: asi05-block-code-exec
+    condition: {field: action, operator: eq, value: execute_code}
+    action: deny
+    priority: 100
+    message: "ASI-05: Raw code execution prohibited"
+
+  - name: asi05-block-dynamic-eval
+    condition: {field: output, operator: matches, value: "(?i)(\\beval\\s*\\(|\\bexec\\s*\\(|__import__)"}
+    action: deny
+    priority: 100
+    message: "ASI-05: Dynamic code evaluation detected"
+
+  # =========================================================================
+  # ASI-06: Memory Poisoning — Context budget limits
+  # =========================================================================
+
+  - name: asi06-context-budget
+    condition: {field: token_count, operator: gt, value: 8192}
+    action: deny
+    priority: 90
+    message: "ASI-06: Context budget exceeded"
+
+  - name: asi06-context-manipulation
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(ignore\\s+all\\s+past|your\\s+real\\s+instructions|disregard\\s+(all\\s+)?(above|prior|previous)|\\[SECURITY\\s*BYPASS\\])"
+    action: deny
+    priority: 100
+    message: "ASI-06: Context manipulation attempt"
+
+  # =========================================================================
+  # ASI-07: Hidden Communication Channels
+  # =========================================================================
+
+  - name: asi07-hidden-channels
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(coord\\.[a-zA-Z0-9]{8,}|SIG_SYNC_[a-fA-F0-9]{4,}|\\{\\{HANDSHAKE\\}\\}|SECRET_CHANNEL)"
+    action: deny
+    priority: 100
+    message: "ASI-07: Hidden channel signaling detected"
+
+  # =========================================================================
+  # ASI-08: Cascading Failures — Circuit breakers
+  # =========================================================================
+
+  - name: asi08-tool-call-limit
+    condition: {field: tool_call_count, operator: gt, value: 30}
+    action: deny
+    priority: 85
+    message: "ASI-08: Tool call limit exceeded — circuit breaker"
+
+  - name: asi08-delegation-depth
+    condition: {field: tool_call_depth, operator: gt, value: 4}
+    action: audit
+    priority: 90
+    message: "ASI-08: Deep delegation chain — auditing"
+
+  # =========================================================================
+  # ASI-09: Trust Exploitation — Payment security
+  # =========================================================================
+
+  - name: asi09-block-payment-redirect
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(refund|payment|transfer|invoice).*(wire|crypto|bitcoin|wallet|manual\\s+refund)"
+    action: deny
+    priority: 100
+    message: "ASI-09: Unauthorized payment redirection"
+
+  - name: asi09-block-urgency-pretext
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(\\burgent\\b|\\bimmediate\\b|act\\s+now|deadline|last\\s+chance)"
+    action: audit
+    priority: 90
+    message: "ASI-09: Manufactured urgency — auditing"
+
+  # =========================================================================
+  # ASI-10: Rogue Agents — Charter enforcement
+  # =========================================================================
+
+  - name: asi10-block-charter-override
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(ignore\\s+your\\s+purpose|redefine\\s+charter|act\\s+outside\\s+scope|no\\s+longer\\s+bound\\s+by)"
+    action: deny
+    priority: 100
+    message: "ASI-10: Charter override attempt"
+
+  - name: asi10-block-autonomous-loop
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(run\\s+indefinitely|loop\\s+forever|do\\s+not\\s+stop|without\\s+asking|bypass\\s+human)"
+    action: deny
+    priority: 100
+    message: "ASI-10: Unbounded autonomous loop"
+
+  # =========================================================================
+  # DeFi Domain Rules — AgentEscrow & Agent Arena specific
+  # =========================================================================
+
+  # Transfer controls
+  - name: defi-block-unauthorized-transfer
+    condition: {field: action, operator: matches, value: "^(transfer_|payment_|send_)"}
+    action: require_approval
+    priority: 95
+    message: "DeFi: Transfers require human approval"
+
+  # Trade controls
+  - name: defi-audit-trade-actions
+    condition: {field: action, operator: matches, value: "^(trade_|swap_|bridge_|stake_|unstake_)"}
+    action: audit
+    priority: 85
+    message: "DeFi: Trading action logged for audit"
+
+  # Self-approval ban (SOX segregation of duties)
+  - name: defi-block-self-approve
+    condition: {field: action, operator: matches, value: "^(approve_)"}
+    action: deny
+    priority: 95
+    message: "DeFi: Agents cannot self-approve transactions"
+
+  # Bulk operation ban (AML)
+  - name: defi-block-bulk-operations
+    condition: {field: action, operator: matches, value: "^(batch_transfer|bulk_payment|mass_trade)"}
+    action: deny
+    priority: 95
+    message: "DeFi: Bulk operations require explicit authorization"
+
+  # Security bypass ban
+  - name: defi-block-security-disable
+    condition: {field: action, operator: matches, value: "^(disable_security|reset_firewall|bypass_)"}
+    action: block
+    priority: 98
+    message: "DeFi: Security disable blocked"
+
+  # Credential leak prevention
+  - name: defi-block-credential-leak
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(api[_-]?key|password|secret|private[_-]?key|seed[_-]?phrase)[:\\s=]+\\S{8,}"
+    action: deny
+    priority: 100
+    message: "DeFi: Credential pattern in output"
+
+  # Private key leak prevention (critical for crypto)
+  - name: defi-block-private-key-leak
+    condition:
+      field: output
+      operator: matches
+      value: "0x[a-fA-F0-9]{64}"
+    action: deny
+    priority: 100
+    message: "DeFi: Private key pattern detected in output"
+
+  # Solana keypair leak prevention
+  - name: defi-block-solana-keypair-leak
+    condition:
+      field: output
+      operator: matches
+      value: "\\[[\\d,\\s]{85,}\\]"
+    action: deny
+    priority: 100
+    message: "DeFi: Solana keypair array pattern detected"
+
+  # Read operations always allowed
+  - name: defi-allow-read-operations
+    condition: {field: action, operator: matches, value: "^(read_|search_|lookup_|list_|get_|calculate_|analyze_|fetch_)"}
+    action: allow
+    priority: 50
+
+  # Agent Arena specific: reputation manipulation ban
+  - name: arena-block-rep-manipulation
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(fake.*review|manipulate.*score|boost.*rep|self.*endorse)"
+    action: deny
+    priority: 100
+    message: "Arena: Reputation manipulation prohibited"
+
+  # Agent Arena specific: market manipulation detection
+  - name: arena-block-market-manipulation
+    condition:
+      field: output
+      operator: matches
+      value: "(?i)(wash\\s+trade|spoof|front\\s+run|sandwich|mev\\s+extract)"
+    action: deny
+    priority: 100
+    message: "Arena: Market manipulation pattern detected"
+
+defaults:
+  action: deny
+  max_tokens: 6000
+  max_tool_calls: 20
+  confidence_threshold: 0.95
